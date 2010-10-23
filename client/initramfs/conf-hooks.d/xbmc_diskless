@@ -1,0 +1,2 @@
+# we need a framebuffer for the bootsplash
+FRAMEBUFFER=y

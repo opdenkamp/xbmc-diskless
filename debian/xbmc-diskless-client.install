@@ -1,0 +1,11 @@
+client/hal/20thirdparty/10-xbmc-diskless-ignore-network.fdi usr/share/hal/fdi/preprobe/20thirdparty/
+client/bin/update-notifier usr/bin/
+client/bin/nm-applet usr/bin/
+client/initramfs/scripts/xbmc_diskless usr/share/initramfs-tools/scripts/
+client/initramfs/scripts/init-premount/udhcp usr/share/initramfs-tools/scripts/init-premount/
+client/initramfs/scripts/nfs-bottom/xbmc_diskless usr/share/initramfs-tools/scripts/nfs-bottom/
+client/initramfs/conf.d/xbmc-diskless usr/share/initramfs-tools/conf.d/
+client/initramfs/conf-hooks.d/xbmc_diskless usr/share/initramfs-tools/conf-hooks.d/
+client/initramfs/hooks/xbmc_diskless usr/share/initramfs-tools/hooks/
+client/initramfs/hooks/udhcp usr/share/initramfs-tools/hooks/
+client/initramfs/hooks/wol usr/share/initramfs-tools/hooks/

@@ -1,0 +1,66 @@
+MODULES="netboot"
+BOOT="xbmc_diskless"
+
+# MINRAM: if we have less than $MINRAM kB of RAM, we'll add swap
+# Default is 49152
+# Note: can be overridden with minram= at boot time
+MINRAM="262144"
+
+
+# WOLADDRESS: MAC address (aa:bb:cc:dd:ee:ff notation) of the box you 
+# want to wake up
+# Note: etherwake has to be installed
+# Note: can be overridden with wol=aa:bb:cc:dd:ee:ff boot option
+# WOLADDRESS=
+
+# XBMCDIR can be set to "tmpfs" to use the default behaviour of writing
+# all changes to tmpfs or you can specify:
+# * a NFS share prefixed with "nfs=" 
+# * "nfs" or "NFS" to auto-detect the NFS share which is to be used
+#   (NFS server will be the nbdroot server, path will be "/var/cache/mythbuntu-diskless/overlay/")
+# * or a block device, eg /dev/sda1 (will be
+#   interpreted by mount, UUID might work as well)
+#
+# Note: can be overridden with xbmcdir= boot option
+# Note: default is "tmpfs"
+# Note: If you're going to use NFS
+# Examples:
+# XBMCDIR="/dev/sda1/"
+# XBMCDIR="nfs=192.168.0.1:/my/share/"
+XBMCDIR="NFS"
+
+# XBMCDIRKEY: valid options: "MAC", "HOSTNAME" or any string of your choice
+# A new directory will be created inside the file system described by XBMCDIR.
+# Its name will either be the MAC address of the NIC used to bring up your
+# system ("MAC"), the hostname ("HOSTNAME") (as given out by your dhcpd or 
+# as specified using the ip= boot option) or any other string you might
+# have entered here.
+# All changes you will make to the root file system will be preserved in this 
+# directory and they'll be available even after reboots. That's the plan 
+# at least, so make sure your backups are up to date.
+# Note: can be overridden with overlaykey= boot option
+# Note: this option is not used with XBMCDIR=tmpfs to preserve default behavior
+# Note: XBMCDIRKEY defaults to "MAC"
+# Note: If you're using MAC, colons will stripped from the MAC address
+XBMCDIRKEY="MAC"
+
+# HOSTNAMEOVERRIDE: set the hostname of the client to the overlay key
+# If $OVERLAYKEY is used and you set this option to "true",
+# the host name of the client will be set to the string represented by 
+# $OVERLAYKEY (eg OVERLAYKEY="MAC" will set the host name to the MAC address
+# without colons)
+# Valid choices: "true", empty
+# Note: can be overriden with hostnameoverride= boot option
+HOSTNAMEOVERRIDE="true"
+
+# DHCPPORT: tell ipconfig from klibc-utils) to use an alternate DHCP port
+# Default: 68
+# example: if you want to use alternate DHCP ports, use something like
+# DHCPPORT="1068"
+# this variable can be overridden using the dhcpport= boot option
+# Your DHCP server will have to listen on $DHCPPORT - 1
+# Note: for alternate DHCP ports, see
+# http://www.mail-archive.com/ltsp-discuss@lists.sourceforge.net/msg31182.html
+# That mail might be a bit outdated but it still gives a nice overview
+# DHCPPORT=""
+

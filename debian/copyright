@@ -1,0 +1,86 @@
+This package was originally called mythbuntu-diskless and was changed by 
+Lars Op den Kamp <lars@opdenkamp.eu> for XBMC.
+
+
+This package was debianized by Michael Haas <laga@laga.ath.cx> on
+Thu, 31 Jan 2008 00:15:37 +0100.
+
+It can be downloaded from https://code.launchpad.net/~mythbuntu/mythbuntu/mb-diskless
+
+Many files were originally derived from the LTSP package found in Ubuntu.
+
+Copyright: 
+    initramfs/conf.d/ltsp:
+    Copyright (C) 2008 Michael Haas <laga@laga.ath.cx>
+    
+    initramfs/scripts/mythbuntu_nbd, initramfs/hooks/ltsp_nbd:
+    Copyright (C) 2005 Canonical Ltd. 
+    Copyright (C) 2008 Michael Haas <laga@laga.ath.cx>
+    (see <https://bugs.launchpad.net/ubuntu/+source/ltsp/+bug/190016>)
+    
+    initramfs/hooks/wol:
+    Copyright (C) 2005 Canonical Ltd.
+    Copyright (C) 2008 Michael Haas <laga@laga.ath.cx>
+
+    debian/mythbuntu-diskless-client-builder.postinst,
+    debian/mythbuntu-diskless-client-builder.templates:
+    Copyright (C) 2005 Canonical Ltd.
+    Copyright (C) 2008 Michael Haas <laga@laga.ath.cx>
+
+    debian/dhcpd.conf:
+    taken from ltsp-5.0.40~bzr20080212 ubuntu package 
+            
+License:
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
+Copyright:
+
+    hal/20thirdparty/10-mythbuntu-diskless-ignore-network.fdi:
+    Copyright (C) 2007 Doug Goldstein 
+      <http://blog.cardoe.com/archives/2007/11/23/having-hal-ignore-devices/>
+
+License: 2-clause BSD style <http://www.gnu.org/licenses/info/BSD_2Clause.html>
+
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+
+	* Redistributions of source code must retain the above copyright
+	notice, this list of conditions and the following disclaimer.
+
+	* Redistributions in binary form must reproduce the above
+	copyright notice, this list of conditions and the following
+	disclaimer in the documentation and/or other materials provided
+	with the distribution.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+
+The Debian packaging is (C) 2008, Michael Haas <laga@laga.ath.cx> and
+is licensed under the GPL-3, see `/usr/share/common-licenses/GPL-3'.
+

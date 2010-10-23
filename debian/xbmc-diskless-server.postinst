@@ -1,0 +1,26 @@
+#!/bin/sh -e
+
+. /usr/share/debconf/confmodule
+
+case "$1" in
+	*)
+	# create space for images, target and overlay
+	mkdir -p /var/lib/xbmc-diskless
+	mkdir -p /var/lib/xbmc-diskless/images
+	mkdir -p /var/lib/xbmc-diskless/overlay
+	chmod 777 /var/lib/xbmc-diskless/overlay
+	mkdir -p /var/lib/xbmc-diskless/packages
+	mkdir -p /var/lib/xbmc-diskless/provision
+	mkdir -p /var/lib/xbmc-diskless/provision/default
+	mkdir -p /var/lib/xbmc-diskless/overlay/provision
+	cd /var/lib/xbmc-diskless
+	mkdir -p /usr/share/xbmc-diskless
+	mkdir -p /var/lib/tftpboot/xbmc-netboot
+	;;
+esac
+
+#DEBHELPER#
+
+
+exit 0
+

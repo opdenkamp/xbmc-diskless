@@ -1,0 +1,3 @@
+#!/bin/sh
+# we don't want nm-applet on an xbmc diskless client
+exit 0

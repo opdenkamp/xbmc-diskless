@@ -1,0 +1,39 @@
+#!/bin/sh -e
+
+. /usr/share/debconf/confmodule
+
+case "$1" in
+	configure)
+		# move the alsa config to /etc
+		mv /var/lib/alsa /etc/.
+		ln -s /etc/alsa /var/lib/alsa
+
+		# we only need one console
+		for init_seq in {2..6}; do
+			if [ -f /etc/init/tty${init_seq}.conf ]; then
+				mv /etc/init/tty${init_seq}.conf /etc/init/tty${init_seq}.conf-disabled
+			fi
+		done
+
+		# remove nbd client startup
+		update-rc.d -f nbd-client remove
+		update-rc.d -f umountnfs.sh remove
+
+		# update the initramfs
+		if which update-initramfs >/dev/null 2>&1; then
+			update-initramfs -u
+        	fi
+        	;;
+	abort-upgrade|abort-deconfigure|abort-remove)
+		;;
+	*)
+		echo "$0 called with unknown argument \`$1'" 1>&2
+		exit 1
+ 		;;
+esac
+
+#DEBHELPER#
+
+
+exit 0
+

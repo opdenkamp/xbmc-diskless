@@ -1,0 +1,36 @@
+#!/bin/sh -e
+# initramfs hook for xbmc-diskless. includes nbd
+
+MINKVER="2.6.17"
+PREREQ=""
+
+# Output pre-requisites
+prereqs()
+{
+    echo "$PREREQ"
+}
+
+case "$1" in
+    prereqs)
+        prereqs
+        exit 0
+    ;;
+esac
+
+
+. /usr/share/initramfs-tools/hook-functions
+
+# make sure all our modules are there
+force_load nbd
+force_load squashfs
+force_load aufs
+
+# Copy across the binaries
+copy_exec /sbin/nbd-client /sbin
+copy_exec /sbin/mkswap /sbin
+copy_exec /sbin/swapon /sbin
+copy_exec /usr/bin/tftp /bin
+copy_exec /bin/chown /bin
+copy_exec /usr/sbin/ethtool /sbin
+copy_exec /bin/tar /bin
+copy_exec /bin/bzip2 /bin

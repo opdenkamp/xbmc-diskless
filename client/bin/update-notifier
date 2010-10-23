@@ -1,0 +1,3 @@
+#!/bin/sh
+# we don't want update-notifier on an xbmc diskless client
+exit 0

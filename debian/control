@@ -1,0 +1,28 @@
+Source: xbmc-diskless
+Maintainer: Lars Op den Kamp <lars@opdenkamp.eu>
+Build-Depends: debhelper (>= 7)
+Section: misc
+Priority: optional
+XSBC-Original-Maintainer: Ubuntu MythTV Team <ubuntu-mythtv@lists.ubuntu.com>
+Standards-Version: 3.8.4
+
+Package: xbmc-diskless-client
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, etherwake, tar, bzip2, xbmc-live, lirc, lirc-modules-source, ethtool, ssh, lm-sensors, hdparm, sdparm, libvdpau1, usbutils, nvidia-glx-185, acpid, nvclock, nvidia-185-libvdpau, psmisc, tftp-hpa, xinit, xserver-xorg, xserver-common, xinput, x11-xserver-utils, setserial, screen-resolution-extra, python, python-support, python-xkit, python-sip4, python-qt3, python-serial, mesa-utils, lsof, alsa-base, alsa-utils, alsa-tools, rungetty, pm-utils, cpufrequtils, pkg-config, nfs-common, upower, lsb-base, nbd-client, initramfs-tools (>= 0.11), syslinux [i386 amd64], mkelfimage[i386] | yaboot[powerpc] | aboot[alpha] | sparc-utils[sparc], lsb-release, kbd, console-setup, numlockx, udhcpc, pciutils
+Description: XBMC diskless client
+ Needed to configure and boot a XBMC diskless client
+ .
+ Meta-package which for installing a diskless XBMC
+ client.
+ .
+ DO NOT install on a regular machine, it is intended only
+ for installation inside an XBMC diskless client filesystem.
+
+Package: xbmc-diskless-server
+Architecture: any
+Depends: ${misc:Depends}, coreutils, dpkg-dev, squashfs-tools, debootstrap, tftpd-hpa, ltsp-server, nfs-kernel-server, wget, grep, dialog, openbsd-inetd, gzip, net-tools, sysvinit-utils
+Description: XBMC diskless server
+ Needed to create xbmc-diskless images
+ .
+ Creates a new installation with debootstrap, installs
+ xbmc-diskless-client and packs it with squashfs

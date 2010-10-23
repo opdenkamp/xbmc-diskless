@@ -1,0 +1,326 @@
+# XBMC diskless filesystem mounting				-*- shell-script -*-
+# based on ltsp-client-core scripts
+
+# parses /proc/cmdline
+parse_cmdline()
+{
+	maybe_break Xcmdline
+	# command line parsing
+	for x in $(cat /proc/cmdline); do
+		case $x in
+			wol=*)
+				WOLADDRESS="${x#wol=}"
+			;;
+			
+			xbmcdir=*)
+				XBMCDIR="${x#xbmcdir=}"
+			;;
+
+			xbmcdirkey=*)
+				XBMCDIRKEY="${x#xbmcdirkey=}"
+			;;
+			
+			minram=*)
+				MINRAM="${x#minram=}"
+			;;
+			break=*)
+				break=${x#break=}
+			;;
+		esac
+	done
+}
+
+# sets the options for NBD mounting
+set_nbd_options()
+{
+	maybe_break Xoptions
+	if [ -n "${nbdroot}" ]; then
+		NBD_ROOT_SERVER=$( echo "${nbdroot}" | sed 's/:.*//')
+		NBD_ROOT_PORT=$( echo "${nbdroot}" | sed 's/.*://')
+		if [ -z "$NBD_ROOT_PORT" ] || [ "$NBD_ROOT_SERVER" = "$NBD_ROOT_PORT" ]; then
+			NBD_ROOT_PORT="2000"
+		fi
+	else
+		NBD_ROOT_SERVER="${ROOTSERVER}"
+		NBD_ROOT_PORT=${nbdport:-"2000"}
+	fi
+
+	if [ -n "${nbdswap}" ]; then
+		NBD_SWAP_SERVER=$( echo "${nbdswap}" | sed 's/:.*//')
+		NBD_SWAP_PORT=$( echo "${nbdswap}" | sed 's/.*://')
+		if [ -z "$NBD_SWAP_PORT" ] ||  [ "$NBD_SWAP_SERVER" = "$NBD_SWAP_PORT" ]; then
+			NBD_ROOT_PORT="9572"
+		fi
+	else
+		NBD_SWAP_SERVER="${ROOTSERVER}"
+		NBD_SWAP_PORT=${nbdswapport:-"9572"}
+	fi
+
+	# try to get swap from the server if we dont have enough ram (less than 48M)
+	if [ -n "$MINRAM" ]; then
+		min_ram="$MINRAM"
+	else
+		min_ram=49152
+	fi
+}
+
+# wakes up the server
+wake_server()
+{
+	maybe_break Xwake
+	if [ -n "$WOLADDRESS" ]  && [ -x /sbin/etherwake ]; then
+		[ "$quiet" != "y" ] && log_begin_msg "WOL: waking up $WOLADDRESS (using etherwake)"
+		etherwake -i $DEVICE $WOLADDRESS
+		[ "$quiet" != "y" ] && log_end_msg
+	fi
+}
+
+# mounts the swapspace if needed
+mount_swap()
+{
+	maybe_break Xswap
+	real_ram=$(cat /proc/meminfo |grep MemTotal|tr -d " [a-z][A-Z]:")
+
+	if [ ${real_ram} -lt ${min_ram} ];then
+		[ "$quiet" != "y" ] && log_begin_msg "Only found ${real_ram}k main ram, trying network swap."
+		nbd-client ${NBD_SWAP_SERVER} ${NBD_SWAP_PORT} /dev/nbd1 || true
+		mkswap /dev/nbd1 || true
+		swapon /dev/nbd1 || true
+		[ "$quiet" != "y" ] && log_end_msg
+	fi
+}
+
+# mounts the NBD root
+mount_nbd()
+{
+	maybe_break Xnbd
+	[ "$quiet" != "y" ] && log_begin_msg "mounting the NBD root"
+
+	mkdir -p /rofs
+
+	if [ -z "${ROOTDELAY}" ]; then
+		delay=180
+	else
+		delay=${ROOTDELAY}
+	fi
+
+	retry_nr=0
+
+	while [ ${retry_nr} -lt ${delay} ] && [ ! -e /rofs${init} ]; do
+		[ ${retry_nr} -gt 0 ] && \
+		[ "$quiet" != "y" ] && log_begin_msg "Retrying nbd mount"
+		# FIXME: what happens if nbd-client has already mounted /dev/nbd0 ?!
+		nbd-client ${NBD_ROOT_SERVER} ${NBD_ROOT_PORT} /dev/nbd0 && mount -o ro -t squashfs /dev/nbd0 /rofs
+		retry_nr=$(( ${retry_nr} + 1 ))
+		[ ! -e /rofs${init} ] && /bin/sleep 1
+		[ ${retry_nr} -gt 0 ] && [ "$quiet" != "y" ] && log_end_msg
+	done
+
+	[ "$quiet" != "y" ] && log_end_msg
+}
+
+# mounts an nfs overlay
+mount_nfs_overlay()
+{
+	maybe_break Xnfsoverlay
+	OL="${XBMCDIR#nfs=}"
+
+	# defaults are used if OL=""
+	if [ "$OL" == "NFS" ] || [ "$OL" == "nfs" ]; then
+		OL=""
+	fi
+
+	# Sorry if this is a bit messy, but I don't want to overwrite variables
+	# borrowed from scripts/nfs (initramfs-tools package)
+	if [ -z "${NFSOPTS}" ]; then
+		NFSOPTS="-o retrans=10"
+	fi
+
+	XBMCDIRSERVER=$( echo "${OL}" | sed 's/:.*//')
+	XBMCDIRPATH=$( echo "${OL}" | sed 's/.*://')
+	
+	if [ ! -n "$XBMCDIRSERVER" ]; then
+		XBMCDIRSERVER="${NBD_ROOT_SERVER}"
+	fi
+
+	if [ ! -n "$XBMCDIRPATH" ]; then
+		# is this the correct path?
+		XBMCDIRPATH="/var/lib/xbmc-diskless/overlay/"
+	fi
+
+	SHARE="${XBMCDIRSERVER}:${XBMCDIRPATH}"
+
+	# I wish this could be wrapped in a while loop like nbd-client
+	# But I can't think of a good way to check if the file system was successfully mounted
+	nfsmount -o rw -o nolock ${NFSOPTS} ${SHARE} /cow
+}
+
+# mounts the overlay
+mount_overlay()
+{
+	maybe_break Xoverlay
+	[ "$quiet" != "y" ] && log_begin_msg "mounting the overlay"
+
+	mkdir -p /cow
+
+	if [ ! "x$XBMCDIR" = "xtmpfs" ]; then
+		if [ "x$XBMCDIRKEY" = "xMAC" ]; then
+			# thanks to Scorpi for pointing me to this file
+			# Note: we strip colons from the MAC address
+			KEY=`cat /sys/class/net/${DEVICE}/address | tr -d :`
+		elif [ "x$XBMCDIRKEY" = "xHOSTNAME" ]; then
+			# $HOSTNAME is provided by ipconfig
+			# It's set via DHCP or via the ip= boot option
+			# Maybe we should try to get that via /etc/hostname
+			# but that might come from a static environment (squashfs),
+			# so I'll leave it out for the moment
+			KEY="$HOSTNAME"
+		else
+			KEY="$OVERLAYKEY"
+		fi
+
+		if [ ! -z "$HOSTNAME" ]; then
+			hostname "$HOSTNAME"
+		fi
+
+		case "$XBMCDIR" in
+			# either specify the share using nfs=
+			# or say NFS or nfs to enable auto-detection
+			nfs=*|NFS|nfs)
+				mount_nfs_overlay
+			;;
+	
+			*)
+				mount -o nolock ${XBMCDIR} /cow
+			;;
+		esac
+	
+		if [ ! -d /cow/${KEY} ]; then
+			mkdir /cow/${KEY}
+		fi
+	else
+		KEY=""
+		mount -t tmpfs tmpfs /cow
+	fi
+	
+	mkdir /rwfs
+	mount -t tmpfs rwfs /rwfs
+
+	[ "$quiet" != "y" ] && log_end_msg
+}
+
+# join the filesystems using aufs
+join_overlay()
+{
+	maybe_break Xjoin
+	[ "$quiet" != "y" ] && log_begin_msg "joining the filesystems"
+
+	# merge the rom image and ram overlay
+	mount -t aufs -o br:/rwfs=rw:/rofs=ro,noxino aufsroot ${rootmnt}
+	
+	# bind the NFS mount to /home/xbmc
+	mount -o bind /cow/${KEY} ${rootmnt}/home/xbmc
+	
+	# make sure the owner of /home/xbmc is correct
+	chown 1000:1000 ${rootmnt}/home/xbmc
+
+	[ "$quiet" != "y" ] && log_end_msg
+}
+
+# creates /etc/resolv.conf in the new root
+create_resolv_conf()
+{
+	maybe_break Xresolv
+	if [ -n "$IPV4DNS0" ] && [ ! "$IPV4DNS0" = "0.0.0.0" ]; then
+		echo "# created by xbmc_net initramfs script" > ${rootmnt}/etc/resolv.conf
+		echo "nameserver $IPV4DNS0" >> ${rootmnt}/etc/resolv.conf
+	fi
+
+	if [ -n "$IPV4DNS1" ] && [ ! "$IPV4DNS1" = "0.0.0.0" ]; then
+		echo "nameserver $IPV4DNS1" >> ${rootmnt}/etc/resolv.conf
+	fi
+
+	if [ ! -z "$HOSTNAME" ]; then
+		echo "$HOSTNAME" > ${rootmnt}/etc/hostname
+	fi
+}
+
+# enables wake on lan (if supported by the NIC)
+enable_wol()
+{
+	maybe_break Xwol
+	ethtool -s ${DEVICE} wol g
+}
+
+# provisions the client
+provision_client()
+{
+	maybe_break Xprovision
+	# check if /etc has been copied to /home/xbmc/config
+	if [ ! -d ${rootmnt}/home/xbmc/config ]; then
+		cp -a ${rootmnt}/etc ${rootmnt}/home/xbmc/config
+	fi
+	
+	# bind the config directory
+	mount -o bind ${rootmnt}/home/xbmc/config ${rootmnt}/etc
+	
+	# get the provisioning files if not already provisioned
+	if [ ! -f "${rootmnt}/home/xbmc/.provisioned" ]; then
+		[ "$quiet" != "y" ] && log_begin_msg "Provisioning xbmc"
+
+		if [ -f "/cow/provision/default.tar.bz2" ]; then
+			if [ "$quiet" != "y" ]; then
+				tar -C "${rootmnt}/home/xbmc" -jxpvf "/cow/provision/default.tar.bz2"
+			else
+				tar -C "${rootmnt}/home/xbmc" -jxpf "/cow/provision/default.tar.bz2"
+			fi
+		fi
+
+		MAC_KEY=`cat /sys/class/net/${DEVICE}/address | tr -d :`
+		if [ -f "/cow/provision/${MAC_KEY}.tar.bz2" ]; then
+			if [ "$quiet" != "y" ]; then
+				tar -C "${rootmnt}/home/xbmc" -jxpvf "/cow/provision/${MAC_KEY}.tar.bz2"
+			else
+				tar -C "${rootmnt}/home/xbmc" -jxpf "/cow/provision/${MAC_KEY}.tar.bz2"
+			fi
+		fi
+
+		date > "${rootmnt}/home/xbmc/.provisioned"
+		
+		[ "$quiet" != "y" ] && log_end_msg
+	fi
+	
+	create_resolv_conf
+}
+
+mountroot()
+{
+	# run nfs-top scripts
+	[ "$quiet" != "y" ] && log_begin_msg "Running /scripts/nfs-top"
+	run_scripts /scripts/nfs-top
+	[ "$quiet" != "y" ] && log_end_msg
+
+	configure_networking
+
+	. /scripts/functions
+
+	parse_cmdline
+
+	# source relevant ipconfig output
+	. /tmp/net-${DEVICE}.conf
+
+	set_nbd_options
+	wake_server
+	mount_swap
+	mount_nbd
+	mount_overlay
+	join_overlay
+	enable_wol
+	provision_client
+
+	# run nfs-bottom scripts
+	[ "$quiet" != "y" ] && log_begin_msg "Running /scripts/nfs-bottom"
+	run_scripts /scripts/nfs-bottom
+	[ "$quiet" != "y" ] && log_end_msg
+}
+

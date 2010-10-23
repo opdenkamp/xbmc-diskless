@@ -1,0 +1,6 @@
+Template: xbmc-diskless/abort-installation
+Type: note
+Description: Package can't be installed on a normal Ubuntu installation!
+ This package is only meant to be installed inside a XBMC diskless chroot.
+ .
+ Installing it on a normal Ubuntu installation will break your system.

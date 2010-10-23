@@ -1,0 +1,47 @@
+#!/bin/sh -e
+
+case "$1" in
+    remove)
+        if [ -f "/etc/udev/rules.d/50-ltspfsd.rules.diverted" ]; then
+            dpkg-divert --package xbmc-diskless --rename --remove /etc/udev/rules.d/50-ltspfsd.rules || true
+        fi
+        dpkg-divert --package xbmc-diskless --rename --remove /usr/bin/update-notifier || true
+        dpkg-divert --package xbmc-diskless --rename --remove /usr/bin/nm-applet || true
+	
+	if [ -f /etc/init/ltsp-reboot.conf-disabled ]; then
+		mv /etc/init/ltsp-reboot.conf-disabled /etc/init/ltsp-reboot.conf
+	fi
+
+	if [ -f /etc/init/ltsp-shutdown.conf-disabled ]; then
+		mv /etc/init/ltsp-shutdown.conf-disabled /etc/init/ltsp-shutdown.conf
+	fi
+	
+	for init_seq in {2..6}; do
+		if [ -f /etc/init/tty${init_seq}.conf-disabled ]; then
+			mv /etc/init/tty${init_seq}.conf-disabled /etc/init/tty${init_seq}.conf
+		fi
+	done
+	
+        update-rc.d ltsp-client-core defaults
+        update-rc.d ltsp-client-setup defaults
+	update-rc.d nbd-client defaults
+	update-rc.d umountnfs.sh defaults
+
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear|purge)
+
+
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+
+esac
+
+#DEBHELPER#
+
+
+exit 0
+

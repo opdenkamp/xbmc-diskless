@@ -1,0 +1,41 @@
+#!/bin/sh
+
+case $1 in
+prereqs)
+    # We have no prerequisites.
+    exit 0
+    ;;
+esac
+
+# Gracefully exit if ltsp_chroot file is not present
+test -f ${rootmnt}/etc/ltsp_chroot || exit 0
+
+# set hostname to xbmc if none is received from dhcp
+read HOSTNAME < /proc/sys/kernel/hostname
+	
+if [ "${HOSTNAME}" = "(none)" ]; then
+	# no hostname received
+	HOSTNAME_BASE="xbmc"
+
+	# get networking configuration
+	. /tmp/net-*.conf
+
+	# if HOSTNAME has been nulled by /tmp/net-*.conf
+	if [ "$HOSTNAME" = "(none)" ] || [ -z "$HOSTNAME" ]; then
+		case "$HOSTNAME_EXTRA" in
+			mac)
+				HOSTNAME_EXTRA=$(ip link show $DEVICE | awk '/ether/{print $2}' | tr ':' '-')
+				;;
+			ip|"")
+				HOSTNAME_EXTRA=$(echo "$IPV4ADDR.$IPV4NETMASK" | awk -F "." '{ print (($1%(256-$5)*256+$2%(256-$6))*256+$3%(256-$7))*256+$4%(256-$8) }')
+				;;
+		esac
+
+		HOSTNAME="$HOSTNAME_BASE$HOSTNAME_EXTRA"
+	fi
+
+	echo "$HOSTNAME" > /proc/sys/kernel/hostname
+fi
+
+cat /proc/sys/kernel/hostname > ${rootmnt}/etc/hostname || true
+

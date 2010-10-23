@@ -1,0 +1,127 @@
+xbmc-diskless (0.4.6) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - added some more checks
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 23 Oct 2010 14:29:00 +0200
+
+xbmc-diskless (0.4.5) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - fixed the "check" option
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 23 Oct 2010 14:29:00 +0200
+
+xbmc-diskless (0.4.4) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - added the "check" option that checks the configuration
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 23 Oct 2010 14:29:00 +0200
+
+xbmc-diskless (0.4.3) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - fixed detection in /etc/exports and /etc/inetd.conf
+    - added correct image location to /etc/inetd.conf
+    - some cleanups
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 23 Oct 2010 13:27:00 +0200
+
+xbmc-diskless (0.4.2) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - really using the correct location for the help file now
+    - create pxelinux configuration if it doesn't exist
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 23 Oct 2010 03:12:00 +0200
+
+xbmc-diskless (0.4.1) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - check if the image exists before installing
+    - using the correct location for the help file now
+  * debian/control
+    - added openbsd-inetd to package Depends
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 23 Oct 2010 01:11:00 +0200
+
+xbmc-diskless (0.4.0) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - added a dialog based gui
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Fri, 22 Oct 2010 21:18:00 +0200
+
+xbmc-diskless (0.3.2) lucid; urgency=low
+
+  * README
+    - documentation added
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sun, 3 Oct 2010 12:59:01 +0200
+
+xbmc-diskless (0.3.1) lucid; urgency=low
+
+  * client/initramfs/hooks/xbmc_diskless
+    - accidently removed 'tar' and 'bzip2' from the initramfs. re-added.
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Thu, 9 Sep 2010 21:46:23 +0200
+
+xbmc-diskless (0.3.0) lucid; urgency=low
+
+  * client/*
+    - moved client files into this dir
+    - removed dependency on ltsp-client-core
+  * server/xbmc-diskless.sh
+    - removed ltsp-client-core installation
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Thu, 9 Sep 2010 21:01:16 +0200
+
+xbmc-diskless (0.2.3) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - documented functions a bit
+    - you can add custom packages to the image now
+    - added '--allow-unauthenticated' to the default apt-get parameters
+    - more configuration options added
+  * server/xbmc-diskless-server.conf
+    - more configuration options added
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Tue, 7 Sep 2010 21:35:12 +0200
+
+xbmc-diskless (0.2.2) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - moved some package installations to debootstrap
+    - mounting /sys and /dev/pts now too during the installation
+  * server/xbmc-diskless-server.conf
+    - added some configuration variables
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sun, 5 Sep 2010 11:58:51 +0200
+
+xbmc-diskless (0.2.1) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - using ppa as source now instead of untrusted local sources. cleaner
+      and uses less space on the image.
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 4 Sep 2010 18:00:07 +0200
+
+xbmc-diskless (0.2) lucid; urgency=low
+
+  * initramfs/scripts/xbmc_nbd
+    - only mounts /home/xbmc via nfs and binds /etc to /home/xbmc/config
+      the original contents of /etc will be copied if the directory didn't
+      exist.
+  * server
+    - added image creation and provisioning scripts
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Thu, 2 Sep 2010 22:03:24 +0200
+
+xbmc-diskless (0.1) lucid; urgency=low
+
+  * nearly all
+    - Based on mythbuntu-diskless (0.9-0ubuntu1)
+    - Modified for booting an XBMC client
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Wed, 1 Sep 2010 20:03:50 +0200

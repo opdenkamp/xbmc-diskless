@@ -1,0 +1,35 @@
+#!/bin/sh
+# /etc/init.d/xbmc-diskless: set up various things on xbmc-diskless clients
+
+# technically, we require the root system to be mounted before this scripted is
+# started
+# practically, it doesn't matter because init is never started if / is not mounted
+
+### BEGIN INIT INFO
+# Provides:          xbmc-diskless
+# Required-Start:    
+# Required-Stop:     
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: xbmc-diskless setup
+# Description:       set up various things on xbmc-diskless clients, eg xorg.conf
+### END INIT INFO
+
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
+
+case "$1" in start|restart|force-reload)
+    # nbd-client shouldn't be killed by /etc/init.d/sendsigs
+    pidof nbd-client > /var/run/sendsigs.omit
+;;
+
+status|stop)
+    # do nothing
+;;
+
+*)
+    echo "$0: invalid arguments. Use  'start', 'restart', 'force-reload', 'stop' or 'status'."
+    echo "$0: 'stop' and 'status' don't do anything and are just there for compatibility reasons."
+
+;;
+
+esac

@@ -1,0 +1,6 @@
+server/xbmc-diskless.sh usr/sbin/
+server/copy_image.sh usr/share/xbmc-diskless/
+server/provision.sh usr/share/xbmc-diskless/
+server/xbmc-diskless-server.conf etc/default/
+README usr/share/doc/xbmc-diskless-server/
+COPYING usr/share/doc/xbmc-diskless-server/

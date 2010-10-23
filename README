@@ -1,0 +1,154 @@
+This is a set of packages for creating diskless XBMC clients.
+
+Note: This package contains parts that are based on mythbuntu-diskless,
+which uses parts of LTSP. Both packages have their own licenses.
+
+Copyright (C) 2010  Lars Op den Kamp <lars@opdenkamp.eu>
+
+================================================================================
+
+Introduction
+============
+This package installs the server software that is needed to let any PC boot from
+the network and start XBMC on that PC without installing anything.
+
+It works by creating an image of an Ubuntu installation with XBMC on a server
+and having your clients boot that (read only) image. The client's configuration
+and media databases are stored via NFS, so they won't be lost when you reboot
+your client.
+
+This brings us some advantages:
+- no noisy harddisks in your media player is needed
+- if you want to upgrade XBMC on multiple clients, you will only have to install
+  it once to upgrade them all
+- centralised configuration of all media players (think about things like having
+  the same video database on all media players)
+- any normal work pc can be turned into a media center within seconds. Just
+  reboot it and choose "boot from network" and it's done. Nothing is changed on
+  your harddisk.
+
+Installation
+============
+If you want a diskless XBMC installation, you'll need a server to host it's
+files. On that server, you'll install the 'xbmc-diskless-server' package. It
+contains some scripts to create a disk image for your clients and it makes sure
+the required server components get installed and update the configuration.
+
+This can be done by calling 'xbmc-diskless.sh' as user root.
+
+Server configuration
+====================
+The server configuration file is stored in /etc/default/xbmc-diskless-server.conf
+ and it can be overriden by /etc/xbmc-diskless-server.conf. You should make your
+changes in the latter file, because it won't be overwritten by upgrades.
+
+Almost all of the configuration is done automatically by the installer, except
+ for dhcp. Read the the next section on how to configure that.
+
+The configuration file contains explanations on all parameters in there.
+
+By default, the client image is created as /var/lib/xbmc-diskless/xbmc.img and
+ is made available on tcp port 2000. You might want to firewall this port.
+
+Secondly, if you want to persist your client configurations and databases,
+you'll have to export a directory via nfs. The provisioning process also needs
+this. What provisioning means is explained below.
+
+By default, the following directory is exported over NFS:
+/var/lib/xbmc-diskless/overlay/
+	0.0.0.0/0(rw,no_root_squash,async,no_subtree_check)
+
+Change the ip mask in there to the mask of your clients because by default
+ EVERYBODY IS ALLOWED TO WRITE in that directory.
+
+The clients are booted over PXE, a network boot protocol. You don't have to
+ configure anything, except if you use PXE for anything else than to boot
+ XBMC clients.
+
+DHCP configuration
+==================
+To let the clients know from what server they have to get the configuration
+ files, you have to add the server address to the dhcp client configuration.
+
+If you are using ISC dhcp, the default dhcp server on Ubuntu, add these lines
+ to your host's configuration lines:
+
+next-server XXX.XXX.XXX.XXX;
+filename "/xbmc-netboot/pxelinux.0";
+
+Replace XXX by your server's IP address.
+
+Example:
+subnet 192.168.64.0 netmask 255.255.192.0 {
+	range 192.168.90.100 192.168.90.125;
+	next-server 192.168.64.1;
+	filename "/xbmc-netboot/pxelinux.0";
+}
+
+Restart your dhcp server to make the new configuration active:
+sudo /etc/init.d/dhcp3-server restart
+
+Image creation
+==============
+Creating a new image is easy. Just start the xbmc-diskless.sh GUI and follow
+ the instructions on your screen.
+
+First "create" a new target. Next you compress the target by chosing "pack" and
+ the last step is installing the new image by chosing "install".
+
+Client configuration
+====================
+If you want to change anything in the client configuration, you can do that in
+the image in step 2) above.
+
+Another way is by doing passing boot arguments to
+the client. Besides the normal linux kernel arguments, the following
+xbmc-diskless specific ones are available:
+
+wol=00:11:22:33:44:55
+	send a wake-on-lan signal to the server
+
+xbmcdir=/dir/to/overlay
+	change the overlay directory
+
+xbmcdirkey=MAC
+	use the mac address of the client as directory name in xbmcdir for this client
+
+xbmcdirkey=HOSTNAME
+	use the host name of the client as directory name in xbmcdir for this client
+
+xbmcdirkey=someothername
+	use this name as key for _every_ client. this will overwrite files if you have
+	multiple clients!
+
+You can also log on to the client and change the configuration in there. Please
+note that only the directories /etc and /home/xbmc are persisted. Everything
+else will be restored to the original state after a reboot.
+
+To log on to the client, use ssh and connect as user 'xbmc' to the host. The
+password is set in your server config.
+
+Provisioning
+============
+You might want to distribute some files to one or more clients without adding
+them to the image. Think about your video database, lirc config files, etc.
+
+That's what the provisioning mechanism is for. In the directory
+/var/lib/xbmc-diskless/provsion you can a directory 'default' with files you
+want to have copied to all clients on the first boot. Those files will be copied
+ to the client's /home/xbmc directory.
+
+You can also add directories for each separate client by creating a directory
+with the mac address of the client as name (without the colons).
+
+Please make sure you have the permissions set correctly:
+chown 1000:1000 to each of the files.
+
+/etc is symlinked to /home/xbmc/config so you can add files there too.
+
+To update the provisioning package, start the xbmc-diskless.sh GUI and chose
+ "provision"
+
+Latest version
+==============
+https://launchpad.net/~lars-opdenkamp/+archive/xbmc-diskless
