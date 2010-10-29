@@ -1,3 +1,17 @@
+xbmc-diskless (0.4.7.1) lucid; urgency=low
+
+  * debian/rules
+    - binaries weren't included again
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Tue, 26 Oct 2010 17:59:00 +0200
+
+xbmc-diskless (0.4.7) lucid; urgency=low
+
+  * debian/rules
+    - updated so it will build on amd64 too
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Tue, 26 Oct 2010 17:45:00 +0200
+
 xbmc-diskless (0.4.6) lucid; urgency=low
 
   * server/xbmc-diskless.sh
