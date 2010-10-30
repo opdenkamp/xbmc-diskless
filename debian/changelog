@@ -1,3 +1,13 @@
+xbmc-diskless (0.4.8) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - added some more checks
+    - improved error handling
+    - improved logging
+    - the "installation gauge" is more precise now
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 30 Oct 2010 02:16:00 +0200
+
 xbmc-diskless (0.4.7.1) lucid; urgency=low
 
   * debian/rules
