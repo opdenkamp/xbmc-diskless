@@ -1,3 +1,12 @@
+xbmc-diskless (0.4.8.1) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - fixed mount checks
+    - limit rm with --one-filesystem so /dev can't be removed accidently
+    - some cleanups
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 30 Oct 2010 18:12:00 +0200
+
 xbmc-diskless (0.4.8) lucid; urgency=low
 
   * server/xbmc-diskless.sh
