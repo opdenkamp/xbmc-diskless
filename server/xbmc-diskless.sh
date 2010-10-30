@@ -33,6 +33,7 @@ SCRIPT=`basename $0`
 # file locations, can be overriden by the config files
 APTADDREPOS="/usr/bin/add-apt-repository"
 APTGET="/usr/bin/apt-get"
+APTKEY="/usr/bin/apt-key"
 AWK="/usr/bin/awk"
 CAT="/bin/cat"
 CHMOD="/bin/chmod"
@@ -84,7 +85,8 @@ export DEBIAN_FRONTEND=noninteractive
 export DEBIAN_PRIORITY=critical
 APT_FLAGS="--allow-unauthenticated"
 VERBOSE=1
-unset LAST_MENU
+unset LAST_DIALOG
+unset LAST_DIALOG_PID
 
 # start as "xbmc-diskless.sh X" to use Xdialog. completely untested
 if [ "x$1" = "xX" ]; then
@@ -158,17 +160,23 @@ function cancel_call
 
 function cleanup_temp
 {
-	if [ ! -z "$LAST_MENU" ]; then
-		try_exec $RM -f $LAST_MENU
-		unset LAST_MENU
+	if [ ! -z "$LAST_DIALOG" ]; then
+		try_exec $RM -f $LAST_DIALOG
+		unset LAST_DIALOG
 	fi
 }
 
 function exec_signal
 {
-	last_log_lines=`tail -n 10 $log_file`
+	if [ -f $log_file ]; then
+		last_log_lines=`tail -n 10 $log_file`
+	else
+		last_log_line="No log file found at '${log_file}'"
+	fi
 
-	dialog_error "Signal received! Last action was: ${last_log_message}\n
+	dialog_error "Action interrupted!\n
+\n
+Last action was: ${last_log_message}\n
 \n
 The last log messages are:\n
 ${last_log_lines}"
@@ -233,11 +241,22 @@ function remove_target
 	if [ -d "${target_dir}" ]; then
 		log_message "making sure that virtual directories are not mounted"
 		umount_virtual
+		if [ ! $? -eq 0 ]; then
+			log_message "cancel!"
+			return 1
+		fi
 
 		log_message "removing target directory '${target_dir}'"
-		try_exec $RM -rf $target_dir
+		try_exec $RM -rf --one-file-system $target_dir
 
-		return $EXEC_RETURN
+		if [ ! $? -eq 0 ]; then
+			return $EXEC_RETURN
+		elif [ -d $target_dir ]; then
+			log_error "Failed to remove '${target_dir}'"
+			return 1
+		else
+			return 0
+		fi
 	else
 		return 0
 	fi
@@ -308,35 +327,66 @@ EOF
 	return 0
 }
 
+## Check whether a path is mounted
+function is_mounted
+{
+	if $GREP -qs "$1" /proc/mounts ; then
+		log_message "$1 is mounted"
+		return 1
+	else
+		log_message "$1 is not mounted"
+		return 0
+	fi
+}
+
 ## Mount /proc /dev /sys and /dev/pts in the target
 function mount_virtual
 {
-	log_message "mounting ${target_dir}/proc"
-	try_exec $CHROOT ${target_dir} $MOUNT -t proc none /proc
-	if [ ! $EXEC_RETURN -eq 0 ]; then
-		log_message "'${target_dir}/proc' could not be mounted"
-		return $EXEC_RETURN
+	mount_exec "/dev" "${target_dir}/dev" "-o bind" && \
+	mount_exec "none" "${target_dir}/proc" "-t proc"  && \
+	mount_exec "none" "${target_dir}/sys" "-t sysfs" && \
+	mount_exec "none" "${target_dir}/dev/pts" "-t devpts"
+
+	return $?
+}
+
+## Unmount a path
+function umount_exec
+{
+	path="$1"
+
+	if $GREP -qs "$path" /proc/mounts ; then
+		log_message "umount '${path}'"
+
+		try_exec $UMOUNT "${path}" &>${log_file}
+		if [ ! $? -eq 0 ]; then
+			log_message "'${path}' could not be umounted"
+			return $EXEC_RETURN
+		fi
+	else
+		log_message "${path} is not mounted"
 	fi
 
-	log_message "mounting ${target_dir}/dev"
-	try_exec $MOUNT -o bind /dev ${target_dir}/dev
-	if [ ! $EXEC_RETURN -eq 0 ]; then
-		log_message "'${target_dir}/dev' could not be mounted"
-		return $EXEC_RETURN
-	fi
-	
-	log_message "mounting ${target_dir}/sys"
-	try_exec $CHROOT ${target_dir} $MOUNT -t sysfs none /sys
-	if [ ! $EXEC_RETURN -eq 0 ]; then
-		log_message "'${target_dir}/sys' could not be umounted"
-		return $EXEC_RETURN
-	fi
-	
-	log_message "mounting /dev/pts"
-	try_exec $CHROOT ${target_dir} $MOUNT -t devpts none /dev/pts
-	if [ ! $EXEC_RETURN -eq 0 ]; then
-		log_message "'${target_dir}/dev/pts' could not be umounted"
-		return $EXEC_RETURN
+	return 0
+}
+
+## Mount a path
+function mount_exec
+{
+	source="$1"
+	path="$2"
+	options="$3"
+
+	if $GREP -qs "$path" /proc/mounts ; then
+		log_message "${path} is already mounted"
+	else
+		log_message "mount ${options} '${source}' '${path}'"
+
+		try_exec $MOUNT ${options} ${source} ${path} &>${log_file}
+		if [ ! $? -eq 0 ]; then
+			log_message "'${path}' could not be mounted"
+			return $EXEC_RETURN
+		fi
 	fi
 
 	return 0
@@ -345,43 +395,12 @@ function mount_virtual
 ## Unmount the virtual filesystems in the target
 function umount_virtual
 {
-	log_message "umount '${target_dir}/dev/pts'"
-	if [ -f "${target_dir}/dev/pts/0" ]; then
-		$UMOUNT -fl ${target_dir}/dev/pts &>/dev/null
-		if [ ! $? -eq 0 ]; then
-			log_message "'${target_dir}/dev/pts' could not be umounted"
-			return $EXEC_RETURN
-		fi
-	fi
-	
-	log_message "umount '${target_dir}/sys'"
-	if [ -d "${target_dir}/sys/kernel" ]; then
-		$UMOUNT -fl ${target_dir}/sys &>/dev/null
-		if [ ! $? -eq 0 ]; then
-			log_message "'${target_dir}/sys' could not be umounted"
-			return $EXEC_RETURN
-		fi
-	fi
+	umount_exec "${target_dir}/sys" && \
+	umount_exec "${target_dir}/proc"  && \
+	umount_exec "${target_dir}/dev/pts" && \
+	umount_exec "${target_dir}/dev"
 
-	log_message "umount '${target_dir}/proc'"
-	if [ -d "${target_dir}/proc/self" ]; then
-		$UMOUNT -fl ${target_dir}/proc &>/dev/null
-		if [ ! $? -eq 0 ]; then
-			log_message "'${target_dir}/proc' could not be umounted"
-			return $EXEC_RETURN
-		fi
-	fi
-
-	log_message "umount '${target_dir}/dev'"
-	if [ -f "${target_dir}/dev/null" ]; then
-		$UMOUNT -fl ${target_dir}/dev &>/dev/null
-		if [ ! $? -eq 0 ]; then
-			log_message "'${target_dir}/dev' could not be umounted"
-			return $EXEC_RETURN
-		fi
-	fi
-
-	return 0
+	return $?
 }
 
 ## Create and update the apt sources
@@ -390,15 +409,15 @@ function update_apt_sources
 	# set the default apt sources
 	log_message "creating default apt sources"
 
-	log_message "adding 'deb ${ubuntu_mirror} ${ubuntu_dist} main'"
-	$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror} ${ubuntu_dist} main universe multiverse restricted"
+	log_message "adding 'deb ${ubuntu_mirror} ${ubuntu_dist} universe multiverse restricted'"
+	$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror} ${ubuntu_dist} universe multiverse restricted"
 	if [ ! $? -eq 0 ]; then
 		log_error "failed to add apt source: deb ${ubuntu_mirror}"
 		return 1
 	fi
 
 	# add the default mirror
-	log_message "adding 'deb-src ${ubuntu_mirror} ${ubuntu_dist} main'"
+	log_message "adding 'deb-src ${ubuntu_mirror} ${ubuntu_dist} main universe multiverse restricted'"
 	$CHROOT ${target_dir} $APTADDREPOS "deb-src ${ubuntu_mirror} ${ubuntu_dist} main universe multiverse restricted"
 	if [ ! $? -eq 0 ]; then
 		log_error "failed to add apt source: deb-src ${ubuntu_mirror}"
@@ -407,14 +426,14 @@ function update_apt_sources
 
 	# add the second mirror if it's set
 	if [ ! -z ${ubuntu_mirror2} ]; then
-		log_message "adding 'deb ${ubuntu_mirror2} ${ubuntu_dist} main'"
+		log_message "adding 'deb ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted'"
 		$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted"
 		if [ ! $? -eq 0 ]; then
 			log_error "failed to add apt source: 'deb ${ubuntu_mirror2}'"
 			return 1
 		fi
 
-		log_message "adding 'deb-src ${ubuntu_mirror2} ${ubuntu_dist} main'"
+		log_message "adding 'deb-src ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted'"
 		$CHROOT ${target_dir} $APTADDREPOS "deb-src ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted"
 		if [ ! $? -eq 0 ]; then
 			log_error "failed to add apt source: 'deb-src ${ubuntu_mirror2}'"
@@ -430,6 +449,7 @@ function update_apt_sources
 		return $EXEC_RETURN
 	fi
 
+	# add-apt-repository still exits with 0 if gpg can't get the key, so we'll do an extra check
 	log_message "making sure we got our launchpad key"
 	try_exec $CHROOT ${target_dir} $APTKEY adv --keyserver keyserver.ubuntu.com --recv-key 200B0F29E1326DA781F163333A4CAE5D0DB24E15
 	if [ ! $? -eq 0 ]; then
@@ -648,7 +668,7 @@ function pack
 
 	try_exec $RM -f ${image_dir}/${image_name}-new
 	try_exec $MKDIR -p ${image_dir} 2>/dev/null
-	$MKSQUASHFS ${target_dir} ${image_dir}/${image_name}-new -e cdrom -no-progress -no-recovery &> /dev/null
+	$MKSQUASHFS ${target_dir} ${image_dir}/${image_name}-new -e cdrom -no-progress -no-recovery -noappend &> ${log_file}
 	try_exec $CHMOD 0644 ${image_dir}/${image_name}-new
 
 	return $EXEC_RETURN
@@ -782,6 +802,7 @@ ${dlg_cur_gauge}
 ${dlg_cur_action}:
 XXX
 EOF
+	LAST_DIALOG_PID=$!
 }
 
 ## a message dialog
@@ -838,17 +859,17 @@ function dialog_question
 	_RET=""
 
 	cleanup_temp
-	LAST_MENU=`LAST_MENU 2>/dev/null` || LAST_MENU=/tmp/xdg$$
+	LAST_DIALOG=`LAST_DIALOG 2>/dev/null` || LAST_DIALOG=/tmp/xdg$$
 
 	$DIALOG --title "${dlg_title}" --clear \
-		--inputbox "${dlg_message}" ${dlg_height} ${dlg_width} 2> $LAST_MENU
+		--inputbox "${dlg_message}" ${dlg_height} ${dlg_width} 2> $LAST_DIALOG
 
 	trap - 0 1 2 5 15
 
 	retval=$?
 	case $retval in
 	0)
-		_RET=`$CAT $LAST_MENU`
+		_RET=`$CAT $LAST_DIALOG`
 		return 0
 	;;
 	*)
@@ -866,17 +887,17 @@ function dialog_password_int
 	_PWD=""
 
 	cleanup_temp
-	LAST_MENU=`LAST_MENU 2>/dev/null` || LAST_MENU=/tmp/xdg$$
+	LAST_DIALOG=`LAST_DIALOG 2>/dev/null` || LAST_DIALOG=/tmp/xdg$$
 
 	$DIALOG --title "${dlg_title}" --clear --insecure \
-		--passwordbox "${dlg_message}" ${dlg_height} ${dlg_width} 2> $LAST_MENU
+		--passwordbox "${dlg_message}" ${dlg_height} ${dlg_width} 2> $LAST_DIALOG
 
 	trap - 0 1 2 5 15
 
 	retval=$?
 	case $retval in
 	0)
-		_PWD=`$CAT $LAST_MENU`
+		_PWD=`$CAT $LAST_DIALOG`
 		return 0
 	;;
 	*)
@@ -936,6 +957,11 @@ function dialog_error
 {
 	log_message "show dialog_error '$1'"
 
+	if [ ! -z "$LAST_DIALOG_PID" ]; then
+		kill $LAST_DIALOG_PID &>/dev/null
+		unset LAST_DIALOG_PID
+	fi
+
 	trap "cancel_call" 0 1 2 5 15
 	$DIALOG --title "${dlg_title}" --msgbox "$1" \
 		${dlg_height} ${dlg_width}
@@ -974,7 +1000,7 @@ function show_dlg_menu
 	while [ $exiting -eq 0 ]; do
 		trap "cleanup_temp" 0 1 2 5 15
 		cleanup_temp
-		LAST_MENU=`LAST_MENU 2>/dev/null` || LAST_MENU=/tmp/xdg$$
+		LAST_DIALOG=`LAST_DIALOG 2>/dev/null` || LAST_DIALOG=/tmp/xdg$$
 
 		$DIALOG --clear --title "XBMC Diskless Server" \
 			--menu "Choose an option:" 20 51 10 \
@@ -983,13 +1009,13 @@ function show_dlg_menu
 			"install" "Install a new image" \
 			"provision" "Create the provisioning files" \
 			"help" "Show help" \
-			"exit" "Exit this tool" 2> $LAST_MENU
+			"exit" "Exit this tool" 2> $LAST_DIALOG
 
 		trap - 0 1 2 5 15
 
 		retval=$?
 
-		choice=`$CAT $LAST_MENU`
+		choice=`$CAT $LAST_DIALOG`
 
 		case $retval in
 		0)
@@ -1186,7 +1212,7 @@ function item_create_3
 	log_message "show item_create_3"
 
 	### ppa
-	LAST_MENU=`LAST_MENU 2>/dev/null` || LAST_MENU=/tmp/xdg$$
+	LAST_DIALOG=`LAST_DIALOG 2>/dev/null` || LAST_DIALOG=/tmp/xdg$$
 
 	$DIALOG --clear --title "Create a new image - step 3/7" \
 		--menu "Select the PPA you want to use:" 20 51 10 \
@@ -1195,12 +1221,12 @@ function item_create_3
 		"opdenkamp"  "XBMC Dharma with PVR" \
 		"henningpingel" "Henning Pingel's PPA" \
 		"gregor-fuis" "Gregor Fuis' PPA" \
-		"custom" "Enter a custom PPA" 2> $LAST_MENU
+		"custom" "Enter a custom PPA" 2> $LAST_DIALOG
 
 	retval=$?
 
 	if [ $retval -eq 0 ]; then
-		choice=`$CAT $LAST_MENU`
+		choice=`$CAT $LAST_DIALOG`
 
 		case $choice in
 		none)
@@ -1435,7 +1461,7 @@ function item_create_7
 	dlg_cur_gauge=95
 	dlg_cur_action="Installing misc. packages"
 	dialog_gauge
-	install_bootsplash
+	install_misc
 	if [ ! $? -eq 0 ]; then
 		dialog_error "An error occured while trying to install the misc. packages."
 		return 1
