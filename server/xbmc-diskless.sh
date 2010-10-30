@@ -30,7 +30,7 @@ set -e
 
 SCRIPT=`basename $0`
 
-# file locations
+# file locations, can be overriden by the config files
 APTADDREPOS="/usr/bin/add-apt-repository"
 APTGET="/usr/bin/apt-get"
 AWK="/usr/bin/awk"
@@ -47,6 +47,7 @@ GREP="/bin/grep"
 GZIP="/bin/gzip"
 HEAD="/usr/bin/head"
 IFCONFIG="/sbin/ifconfig"
+ID="/usr/bin/id"
 INETD="/usr/sbin/inetd"
 INETD_INIT="/etc/init.d/openbsd-inetd"
 MKDIR="/bin/mkdir"
@@ -71,7 +72,7 @@ XARGS="/usr/bin/xargs"
 ZCAT="/bin/zcat"
 
 # check if we are running as root or debootstrap won't work
-if [ ! `id -u` -eq 0 ]; then
+if [ ! `$ID -u` -eq 0 ]; then
 	echo "This program must be run as user 'root'.
 
 use \"sudo $0\" to execute this program as root."
@@ -85,6 +86,7 @@ APT_FLAGS="--allow-unauthenticated"
 VERBOSE=1
 unset LAST_MENU
 
+# start as "xbmc-diskless.sh X" to use Xdialog. completely untested
 if [ "x$1" = "xX" ]; then
 	DIALOG=${DIALOG=/usr/bin/Xdialog}
 else
@@ -93,7 +95,7 @@ fi
 
 # verbose apt or not
 if [ ! "x${VERBOSE}" = "x1" ]; then
-        APT_FLAGS+=" -qq"
+	APT_FLAGS+=" -qq"
 fi
 
 # load the default config if it exists
@@ -162,12 +164,28 @@ function cleanup_temp
 	fi
 }
 
+function exec_signal
+{
+	last_log_lines=`tail -n 10 $log_file`
+
+	dialog_error "Signal received! Last action was: ${last_log_message}\n
+\n
+The last log messages are:\n
+${last_log_lines}"
+
+	umount_virtual
+
+	echo "exited because a signal was received. you might want to check your log in '${log_file}'"
+	exit 1
+}
+
 ###############################################################################
 ##      Logging
 ###############################################################################
 
 function log_message
 {
+	last_log_message="$@"
 	echo "$@" >> $log_file
 }
 
@@ -175,13 +193,20 @@ function log_message
 ##      Image creation
 ###############################################################################
 
-## Try to execute a command and exit if it failed
+## Try to execute a command and add a log message if it failed
 function try_exec
 {
+	trap "exec_signal" 0 1 2 5 15
+
 	$@ &>> $log_file
 
-	if [ ! "$?" -eq 0 ]; then
-		log_message "Error executing '$@'"
+	trap - 0 1 2 5 15
+
+	EXEC_RETURN="$?"
+
+	if [ ! $EXEC_RETURN -eq 0 ]; then
+		log_message "error executing '$@'"
+		dialog_error "error executing '$@'"
 		return 1
 	else
 		return 0
@@ -192,16 +217,13 @@ function try_exec
 function create_destination
 {
 	if [ ! -d "${target_dir}" ]; then
-		log_message "Creating base directory"
+		log_message "creating target directory '${target_dir}'"
 		try_exec $MKDIR -p $target_dir
-		
-		if [ "$?" -eq 0 ]; then
-			log_message "ok"
-			return 0
-		else
-			log_message "ERROR"
-			return 1
-		fi
+
+		return $EXEC_RETURN
+	else
+		log_message "target directory '${target_dir}' already exists"
+		return 1
 	fi
 }
 
@@ -209,26 +231,23 @@ function create_destination
 function remove_target
 {
 	if [ -d "${target_dir}" ]; then
-		log_message "Removing '${target_dir}'"
-		try_exec $RM -rf $target_dir
-		
-		if [ "$?" -eq 0 ]; then
-			log_message "ok"
-			return 0
-		else
-			log_message "ERROR"
-			return 1
-		fi
-	fi
+		log_message "making sure that virtual directories are not mounted"
+		umount_virtual
 
-	return 0
+		log_message "removing target directory '${target_dir}'"
+		try_exec $RM -rf $target_dir
+
+		return $EXEC_RETURN
+	else
+		return 0
+	fi
 }
 
 ## Create the target directory
 function create_target
 {
 	if [ -d "${target_dir}" ]; then
-		log_message "Target directory '${target_dir}' exists"
+		log_message "target directory '${target_dir}' exists"
 		return 1
 	else
 		create_destination
@@ -236,14 +255,25 @@ function create_target
 	fi
 }
 
+## Run debootstrap on the target directory but download only
+function debootstrap_target_download
+{
+	# debootstrap destination
+	log_message "running debootstrap --download-only on '${target_dir}'"
+	try_exec $DEBOOTSTRAP --download-only --include=python-software-properties,language-pack-en,plymouth-label ${ubuntu_dist} ${target_dir} ${ubuntu_mirror}
+	if [ ! $? -eq 0 ]; then
+		return $EXEC_RETURN
+	fi
+}
+
 ## Run debootstrap on the target directory
 function debootstrap_target
 {
 	# debootstrap destination
-	log_message "Running debootstrap on '${target_dir}'"
+	log_message "running debootstrap on '${target_dir}'"
 	try_exec $DEBOOTSTRAP --include=python-software-properties,language-pack-en,plymouth-label ${ubuntu_dist} ${target_dir} ${ubuntu_mirror}
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $? -eq 0 ]; then
+		return $EXEC_RETURN
 	fi
 
 	## don't allow daemons to restart during the installation
@@ -253,8 +283,8 @@ exit 101
 EOF
 
 	try_exec $CHMOD +x ${target_dir}/usr/sbin/policy-rc.d
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $? -eq 0 ]; then
+		return $EXEC_RETURN
 	fi
 
 	return 0
@@ -263,7 +293,7 @@ EOF
 ## Create the default fstab
 function create_fstab
 {
-	log_message "Creating fstab"
+	log_message "creating fstab"
 	$CAT << EOF > ${target_dir}/etc/fstab
 # /etc/fstab: static file system information.
 #
@@ -281,28 +311,32 @@ EOF
 ## Mount /proc /dev /sys and /dev/pts in the target
 function mount_virtual
 {
-	log_message "Mounting /proc"
+	log_message "mounting ${target_dir}/proc"
 	try_exec $CHROOT ${target_dir} $MOUNT -t proc none /proc
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $EXEC_RETURN -eq 0 ]; then
+		log_message "'${target_dir}/proc' could not be mounted"
+		return $EXEC_RETURN
 	fi
 
-	log_message "Mounting /dev"
+	log_message "mounting ${target_dir}/dev"
 	try_exec $MOUNT -o bind /dev ${target_dir}/dev
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $EXEC_RETURN -eq 0 ]; then
+		log_message "'${target_dir}/dev' could not be mounted"
+		return $EXEC_RETURN
 	fi
 	
-	log_message "Mounting /sys"
+	log_message "mounting ${target_dir}/sys"
 	try_exec $CHROOT ${target_dir} $MOUNT -t sysfs none /sys
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $EXEC_RETURN -eq 0 ]; then
+		log_message "'${target_dir}/sys' could not be umounted"
+		return $EXEC_RETURN
 	fi
 	
-	log_message "Mounting /dev/pts"
+	log_message "mounting /dev/pts"
 	try_exec $CHROOT ${target_dir} $MOUNT -t devpts none /dev/pts
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $EXEC_RETURN -eq 0 ]; then
+		log_message "'${target_dir}/dev/pts' could not be umounted"
+		return $EXEC_RETURN
 	fi
 
 	return 0
@@ -311,20 +345,40 @@ function mount_virtual
 ## Unmount the virtual filesystems in the target
 function umount_virtual
 {
-	if [ -d ${target_dir}/dev/pts ]; then
-		$UMOUNT ${target_dir}/dev/pts &>/dev/null
+	log_message "umount '${target_dir}/dev/pts'"
+	if [ -f "${target_dir}/dev/pts/0" ]; then
+		$UMOUNT -fl ${target_dir}/dev/pts &>/dev/null
+		if [ ! $? -eq 0 ]; then
+			log_message "'${target_dir}/dev/pts' could not be umounted"
+			return $EXEC_RETURN
+		fi
 	fi
 	
-	if [ -d ${target_dir}/sys ]; then
-		$UMOUNT ${target_dir}/sys &>/dev/null
+	log_message "umount '${target_dir}/sys'"
+	if [ -d "${target_dir}/sys/kernel" ]; then
+		$UMOUNT -fl ${target_dir}/sys &>/dev/null
+		if [ ! $? -eq 0 ]; then
+			log_message "'${target_dir}/sys' could not be umounted"
+			return $EXEC_RETURN
+		fi
 	fi
-	
-	if [ -d ${target_dir}/proc ]; then
-		$UMOUNT ${target_dir}/proc &>/dev/null
+
+	log_message "umount '${target_dir}/proc'"
+	if [ -d "${target_dir}/proc/self" ]; then
+		$UMOUNT -fl ${target_dir}/proc &>/dev/null
+		if [ ! $? -eq 0 ]; then
+			log_message "'${target_dir}/proc' could not be umounted"
+			return $EXEC_RETURN
+		fi
 	fi
-	
-	if [ -d ${target_dir}/dev ]; then
-		$UMOUNT ${target_dir}/dev &>/dev/null
+
+	log_message "umount '${target_dir}/dev'"
+	if [ -f "${target_dir}/dev/null" ]; then
+		$UMOUNT -fl ${target_dir}/dev &>/dev/null
+		if [ ! $? -eq 0 ]; then
+			log_message "'${target_dir}/dev' could not be umounted"
+			return $EXEC_RETURN
+		fi
 	fi
 
 	return 0
@@ -334,76 +388,88 @@ function umount_virtual
 function update_apt_sources
 {
 	# set the default apt sources
-	log_message "Creating default apt sources"
-	log_message "  * adding 'deb ${ubuntu_mirror} ${ubuntu_dist} main'"
+	log_message "creating default apt sources"
+
+	log_message "adding 'deb ${ubuntu_mirror} ${ubuntu_dist} main'"
 	$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror} ${ubuntu_dist} main universe multiverse restricted"
-	if [ ! "$?" -eq 0 ]; then
-		log_message "Failed to add apt repository"
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to add apt source: deb ${ubuntu_mirror}"
 		return 1
 	fi
-	
+
 	# add the default mirror
-	log_message "  * adding 'deb-src ${ubuntu_mirror} ${ubuntu_dist} main'"
+	log_message "adding 'deb-src ${ubuntu_mirror} ${ubuntu_dist} main'"
 	$CHROOT ${target_dir} $APTADDREPOS "deb-src ${ubuntu_mirror} ${ubuntu_dist} main universe multiverse restricted"
-	if [ ! "$?" -eq 0 ]; then
-		log_message "Failed to add apt repository"
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to add apt source: deb-src ${ubuntu_mirror}"
 		return 1
 	fi
-	
+
 	# add the second mirror if it's set
 	if [ ! -z ${ubuntu_mirror2} ]; then
-		log_message "  * adding 'deb ${ubuntu_mirror2} ${ubuntu_dist} main'"
+		log_message "adding 'deb ${ubuntu_mirror2} ${ubuntu_dist} main'"
 		$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted"
-		if [ ! "$?" -eq 0 ]; then
-			log_message "Failed to add apt repository"
+		if [ ! $? -eq 0 ]; then
+			log_error "failed to add apt source: 'deb ${ubuntu_mirror2}'"
 			return 1
 		fi
-		
-		log_message "  * adding 'deb ${ubuntu_mirror2} ${ubuntu_dist} main'"
-		$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted"
-		if [ ! "$?" -eq 0 ]; then
-			log_message "Failed to add apt repository"
+
+		log_message "adding 'deb-src ${ubuntu_mirror2} ${ubuntu_dist} main'"
+		$CHROOT ${target_dir} $APTADDREPOS "deb-src ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted"
+		if [ ! $? -eq 0 ]; then
+			log_error "failed to add apt source: 'deb-src ${ubuntu_mirror2}'"
 			return 1
 		fi
 	fi
-	
+
 	# add the xbmc-diskless ppa
-	log_message "  * adding ppa:lars-opdenkamp/xbmc-diskless"
-	try_exec $CHROOT ${target_dir} $APTADDREPOS ppa:lars-opdenkamp/xbmc-diskless
-	
+	log_message "adding 'ppa:lars-opdenkamp/xbmc-diskless'"
+	try_exec $CHROOT ${target_dir} $APTADDREPOS "ppa:lars-opdenkamp/xbmc-diskless"
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to add apt source: 'ppa:lars-opdenkamp/xbmc-diskless'"
+		return $EXEC_RETURN
+	fi
+
+	log_message "making sure we got our launchpad key"
+	try_exec $CHROOT ${target_dir} $APTKEY adv --keyserver keyserver.ubuntu.com --recv-key 200B0F29E1326DA781F163333A4CAE5D0DB24E15
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to add get the xbmc-diskless launchpad key"
+		return $EXEC_RETURN
+	fi
+
 	# add the custom ppa if it's set
 	if [ ! -z "${ppa_source}" ]; then
-		log_message "  * adding '${ppa_source}'"
-		try_exec $CHROOT ${target_dir} $APTADDREPOS $ppa_source
-		
-		if [ ! "$?" -eq 0 ]; then
-			return 1
+		log_message "adding '${ppa_source}'"
+		try_exec $CHROOT ${target_dir} $APTADDREPOS "$ppa_source"
+		if [ ! $? -eq 0 ]; then
+			log_error "failed to add apt source: '${ppa_source}'"
+			return $EXEC_RETURN
 		fi
 	fi
-	
+
 	# add custom packages
 	add_custom_packages
 
 	# update sources
-	log_message "Updating apt sources"
+	log_message "updating apt sources"
 	try_exec $CHROOT ${target_dir} $APTGET ${APT_FLAGS} update
-
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to update apt sources"
+		return $EXEC_RETURN
 	fi
-	
+
 	return 0
 }
 
 ## copy the packages from $base_dir/packages to the target
 function add_custom_packages
 {
-	log_message "  * adding /packages"
+	log_message "adding packages from '${base_dir}/packages'"
 	$CHROOT ${target_dir} $APTADDREPOS "deb file:/ packages/"
-	
+
 	try_exec $CP -r ${base_dir}/packages ${target_dir}/.
 	try_exec $CHOWN -R root:root ${target_dir}/packages
-	
+
 	# there isn't any plymouth theme in a ubuntu repository yet as far as I can see
 	$WGET -q -nc -t 3 --directory-prefix="${target_dir}/packages" http://excyle.nl/plymouth-theme-xbmc-logo.deb
 
@@ -416,9 +482,9 @@ function add_custom_packages
 ## remove the custom packages from the target
 function remove_custom_packages
 {
-	log_message "Removing /packages"
+	log_message "removing /packages"
 	try_exec $RM -rf ${target_dir}/packages
-	
+
 	$CAT ${target_dir}/etc/apt/sources.list | $GREP -v "file:" > /tmp/sources.list.tmp
 	$MV /tmp/sources.list.tmp ${target_dir}/etc/apt/sources.list
 
@@ -428,32 +494,54 @@ function remove_custom_packages
 ## run dist-upgrade on the target
 function upgrade_system
 {
-	log_message "Upgrading system"
+	log_message "upgrading system"
 	try_exec $CHROOT ${target_dir} $APTGET ${APT_FLAGS} -y dist-upgrade
 
-	return $?
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to upgrade the system"
+	fi
+
+	return $EXEC_RETURN
 }
 
 ## make sure the kernel and initramfs are installed
 function install_kernel
 {
-	log_message "Installing kernel"
+	log_message "installing kernel"
 	echo "do_initrd = Yes" >> ${target_dir}/etc/kernel-img.conf
 	try_exec $CHROOT ${target_dir} $APTGET ${APT_FLAGS} -y install linux-image-generic linux-headers-generic
 
-	return $?
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to install the kernel"
+	fi
+
+	return $EXEC_RETURN
+}
+
+## download xbmc and deps
+function download_xbmc
+{
+	log_message "downloading diskless xbmc"
+
+	try_exec $CHROOT ${target_dir} $APTGET -d ${APT_FLAGS} -y install xbmc-diskless-client
+
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to download diskless xbmc"
+		return $EXEC_RETURN
+	fi
 }
 
 ## install xbmc
 function install_xbmc
 {
-	log_message "Installing diskless xbmc"
+	log_message "installing diskless xbmc"
 
 	touch ${target_dir}/tmp/.xbmc
 	try_exec $CHROOT ${target_dir} $APTGET ${APT_FLAGS} -y install xbmc-diskless-client
 
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to install diskless xbmc"
+		return $EXEC_RETURN
 	fi
 
 	$CAT << EOF | $CHROOT ${target_dir} $PASSWD xbmc > /dev/null 2>/dev/null
@@ -467,33 +555,40 @@ EOF
 ## install misc packages / do misc config
 function install_misc
 {	
-	log_message "Starting ssh at boot"
+	log_message "starting ssh at boot"
 	try_exec $CHROOT ${target_dir} update-rc.d ssh defaults >/dev/null
 
-	if [ ! "$?" -eq 0 ]; then
-		return 1
+	if [ ! $? -eq 0 ]; then
+		return $EXEC_RETURN
 	fi
 
 	# set the default hostname to "xbmc-diskless"
-	log_message "Setting hostname to 'xbmc-diskless'"
+	log_message "setting hostname to 'xbmc-diskless'"
 	echo "xbmc-diskless" > ${target_dir}/etc/hostname
-	
+
 	if [ ! -z "${extra_packages}" ]; then
 		# don't use -y on extra packages
 		try_exec $CHROOT ${target_dir} $APTGET ${APT_FLAGS} install $extra_packages
-		if [ ! "$?" -eq 0 ]; then
-			return 1
+		if [ ! $? -eq 0 ]; then
+			log_error "failed to install the extra packages: ${extra_packages}"
+			return $EXEC_RETURN
 		fi
 	fi
+
+	return 0
 }
 
 ## install the bootsplash
 function install_bootsplash
 {
-	log_message "Installing splash screen"
+	log_message "installing splash screen"
 	try_exec $CHROOT ${target_dir} $APTGET ${APT_FLAGS} -y install plymouth-theme-xbmc-logo
 
-	return $?
+	if [ ! $? -eq 0 ]; then
+		log_error "failed to install the splash screen"
+	fi
+
+	return $EXEC_RETURN
 }
 
 ## copy /root/.ssh/id_rsa.pub to the target's authorized_keys2 if it exists
@@ -501,9 +596,9 @@ function copy_host_key
 {
 	# copy this user's public key to the new host
 	if [ ! -f ~/.ssh/id_rsa.pub ]; then
-	        log_message "No ssh public key found, not installing authorized key"
+	        log_message "no ssh public key found, not installing authorized key"
 	else
-		echo "Adding id_rsa.pub to the new host\'s authorized_keys2"
+		log_message "adding id_rsa.pub to the new host\'s authorized_keys2"
 		try_exec $MKDIR -p ${target_dir}/root/.ssh
 		try_exec $CP ~/.ssh/id_rsa.pub ${target_dir}/root/.ssh/authorized_keys2
 	fi
@@ -517,7 +612,7 @@ function copy_host_key
 function update_provision
 {
 	$FIND -L ${base_dir}/provision/* -maxdepth 0 -type d -exec /usr/share/xbmc-diskless/provision.sh {} ${overlay_dir} \;
-	
+
 	return $?
 }
 
@@ -528,7 +623,7 @@ function update_provision
 ## cleanup the target
 function pack_cleanup
 {
-	log_message "Cleaning target"
+	log_message "cleaning target"
 	try_exec $CHROOT ${target_dir} $APTGET clean
 	try_exec $CHROOT ${target_dir} $APTGET -y autoremove
 	try_exec $RM -rf ${target_dir}/root/.bash_history \
@@ -537,6 +632,7 @@ function pack_cleanup
 		${target_dir}/tmp/.xbmc
 
 	remove_custom_packages
+
 	try_exec $CHROOT ${target_dir} $APTGET update
 
 	return 0
@@ -546,14 +642,16 @@ function pack_cleanup
 function pack
 {
 	## create the squashfs image
-	log_message "Creating image"
+	log_message "creating image"
+
+	umount_virtual
 
 	try_exec $RM -f ${image_dir}/${image_name}-new
 	try_exec $MKDIR -p ${image_dir} 2>/dev/null
 	$MKSQUASHFS ${target_dir} ${image_dir}/${image_name}-new -e cdrom -no-progress -no-recovery &> /dev/null
 	try_exec $CHMOD 0644 ${image_dir}/${image_name}-new
 
-	return $?
+	return $EXEC_RETURN
 }
 
 ###############################################################################
@@ -567,25 +665,25 @@ function install_image
 
 	## copy kernel and initramfs
 	$FIND ${base_dir}/target/boot -name initrd.img-\* | $SORT | $TAIL -n1 | $XARGS /usr/share/xbmc-diskless/copy_image.sh ${tftp_dir}/initrd.img
-	
+
 	if [ ! $? -eq 0 ]; then
 		log_message "unable to copy the initrd"
 		return 1
 	elif [ ! -f ${tftp_dir}/initrd.img ]; then
-		log_message "the initrd wasn't found on '${tftp_dir}/initrd.img'"
+		log_error "the initrd wasn't found on '${tftp_dir}/initrd.img'"
 		return 1
 	fi
-	
+
 	$FIND ${base_dir}/target/boot -name vmlinuz-\* | $SORT | $TAIL -n1 | $XARGS /usr/share/xbmc-diskless/copy_image.sh ${tftp_dir}/vmlinuz
-	
+
 	if [ ! $? -eq 0 ]; then
-		log_message "unable to copy the kernel"
+		log_error "unable to copy the kernel"
 		return 1
 	elif [ ! -f ${tftp_dir}/vmlinuz ]; then
-		log_message "the kernel wasn't found on '${tftp_dir}/vmlinuz'"
+		log_error "the kernel wasn't found on '${tftp_dir}/vmlinuz'"
 		return 1
 	fi
-	
+
 	## make squashfs image available via nbd
 	if [ -f "${base_dir}/images/${image_name}-new" ]; then
 		try_exec $MV ${base_dir}/images/${image_name}-new ${base_dir}/images/${image_name}
@@ -598,14 +696,14 @@ function install_image
 		## copy the client's pxelinux.0 to the tftpdir
 		try_exec $CP -a ${target_dir}/usr/lib/syslinux/pxelinux.0 ${tftp_dir}/pxelinux.0
 		if [ ! $? -eq 0 ]; then
-			log_message "unable to copy pxelinux.0"
-			return 1
+			log_error "unable to copy pxelinux.0"
+			return $EXEC_RETURN
 		fi
 	fi
 
 	if [ ! -d "${tftp_dir}/pxelinux.cfg" ]; then
 		try_exec $MKDIR -p ${tftp_dir}/pxelinux.cfg
-		
+
 		$CAT <<EOF > ${tftp_dir}/pxelinux.cfg/default
 DEFAULT vmlinuz ro initrd=initrd.img nbdroot=${host_ip} nbdport=2000 xbmcdir=nfs=${host_ip}:${overlay_dir} xbmc=autostart quiet splash
 EOF
@@ -618,16 +716,16 @@ EOF
 function install_inetd
 {
 	installed=`$GREP -v "^#" /etc/inetd.conf | $GREP "\${image_name}" | $WC -m`
-	
+
 	if [ "$installed" -eq 0 ]; then
-		log_message "Adding nbdrootd to /etc/inetd.conf"
+		log_message "adding nbdrootd to /etc/inetd.conf"
 		echo "2000	stream	tcp	nowait	nobody	/usr/sbin/tcpd /usr/sbin/nbdrootd ${image_dir}/${image_name}" >> /etc/inetd.conf
-		log_message "Restarting inetd"
+		log_message "restarting inetd"
 		try_exec $INETD_INIT restart
 	else
 		log_message "nbdrootd already present in /etc/inetd.conf"
 	fi
-	
+
 	return 0
 }
 
@@ -635,27 +733,27 @@ function install_inetd
 function install_overlay
 {
 	installed=`$GREP -v '^#' /etc/exports | $GREP "\${overlay_dir}" | $WC -m`
-	
+
 	if [ ! -d "${overlay_dir}" ]; then
 		try_exec $MKDIR -p $overlay_dir
-		
+
 		if [ ! $? -eq 0 ]; then
-			log_message "Unable to create ${overlay_dir}"
-			return 1
+			log_message "unable to create ${overlay_dir}"
+			return $EXEC_RETURN
 		fi
 	fi
 
 	if [ "${installed}" -eq 0 ]; then
-		log_message "Adding ${overlay_dir} to /etc/exports"
+		log_message "adding ${overlay_dir} to /etc/exports"
 		echo "${overlay_dir}/ ${client_iprange}(rw,no_root_squash,async,no_subtree_check)" >> /etc/exports
-		log_message "Re-exporting /etc/exports"
+		log_message "re-exporting /etc/exports"
 		try_exec $EXPORTFS -r
-		
-		return $?
+
+		return $EXEC_RETURN
 	else
 		log_message "${overlay_dir} already present in /etc/exports"
 	fi
-	
+
 	return 0
 }
 
@@ -694,6 +792,8 @@ function dialog_message
 	trap "cancel_call" 0 1 2 5 15
 	$DIALOG --title "${dlg_title}" --msgbox "${dlg_message}" \
 		${dlg_height} ${dlg_width}
+
+	trap - 0 1 2 5 15
 }
 
 ## a yes/no dialog
@@ -706,6 +806,8 @@ function dialog_yesno
 
 	$DIALOG --title "${dlg_title}" --clear --defaultno --yesno "${dlg_message}" \
 		 ${dlg_height} ${dlg_width}
+
+	trap - 0 1 2 5 15
 
 	_RET=$?
 
@@ -741,6 +843,8 @@ function dialog_question
 	$DIALOG --title "${dlg_title}" --clear \
 		--inputbox "${dlg_message}" ${dlg_height} ${dlg_width} 2> $LAST_MENU
 
+	trap - 0 1 2 5 15
+
 	retval=$?
 	case $retval in
 	0)
@@ -766,6 +870,8 @@ function dialog_password_int
 
 	$DIALOG --title "${dlg_title}" --clear --insecure \
 		--passwordbox "${dlg_message}" ${dlg_height} ${dlg_width} 2> $LAST_MENU
+
+	trap - 0 1 2 5 15
 
 	retval=$?
 	case $retval in
@@ -830,12 +936,10 @@ function dialog_error
 {
 	log_message "show dialog_error '$1'"
 
-	dialog_default
-	
-	
 	trap "cancel_call" 0 1 2 5 15
 	$DIALOG --title "${dlg_title}" --msgbox "$1" \
 		${dlg_height} ${dlg_width}
+	trap - 0 1 2 5 15
 }
 
 ###############################################################################
@@ -852,7 +956,12 @@ function menu_item_help
 	dlg_height=30
 	dlg_title="XBMC Diskless server"
 	dlg_message=`$ZCAT /usr/share/doc/xbmc-diskless-server/README.gz`
-	dialog_message
+
+	trap "cancel_call" 0 1 2 5 15
+	$DIALOG --title "${dlg_title}" --msgbox "${dlg_message}" \
+		${dlg_height} ${dlg_width}
+
+	trap - 0 1 2 5 15
 }
 
 ## the main menu
@@ -875,6 +984,8 @@ function show_dlg_menu
 			"provision" "Create the provisioning files" \
 			"help" "Show help" \
 			"exit" "Exit this tool" 2> $LAST_MENU
+
+		trap - 0 1 2 5 15
 
 		retval=$?
 
@@ -1034,6 +1145,7 @@ Your current images will not be changed until the final step, which will ask for
 	dialog_message
 
 	item_create_2
+	return $?
 }
 
 ###############################################################################
@@ -1064,6 +1176,7 @@ Please note that only 'lucid' is tested."
 		fi
 
 		item_create_3
+		return $?
 	fi
 }
 
@@ -1093,25 +1206,31 @@ function item_create_3
 		none)
 			ppa_source=""
 			item_create_4
+			return $?
 		;;
 		team-xbmc)
 			ppa_source="ppa:team-xbmc/ppa"
 			item_create_4
+			return $?
 		;;
 		opdenkamp)
 			ppa_source="ppa:lars-opdenkamp/xbmc-pvr"
 			item_create_4
+			return $?
 		;;
 		henningpingel)
 			ppa_source="ppa:henningpingel/xbmc"
 			item_create_4
+			return $?
 		;;
 		gregor-fuis)
 			ppa_source="ppa:gregor-fuis/xbmc-pvr"
 			item_create_4
+			return $?
 		;;
 		custom)
 			item_create_3_custom
+			return $?
 		;;
 		esac
 	else
@@ -1142,6 +1261,7 @@ Example: ppa:lars-opdenkamp/xbmc-diskless"
 		ppa_source="$_RET"
 
 		item_create_4
+		return $?
 	fi
 }
 
@@ -1161,6 +1281,7 @@ function item_create_4
 		extra_packages="$_RET"
 
 		item_create_5
+		return $?
 	fi
 }
 
@@ -1180,6 +1301,7 @@ function item_create_5
 		client_password="$_RET"
 
 		item_create_6
+		return $?
 	fi
 }
 
@@ -1207,6 +1329,7 @@ If you press 'yes', a new image will be created. It will not be installed yet."
 		else
 			# start creating
 			item_create_7
+			return $?
 		fi
 	fi
 }
@@ -1238,11 +1361,18 @@ function item_create_7
 	fi
 
 	dlg_cur_gauge=5
+	dlg_cur_action="Downloading basic Ubuntu installation (this will take a while)"
+	dialog_gauge
+	debootstrap_target_download
+	if [ ! $? -eq 0 ]; then
+		dialog_error "An error occured while trying to run debootstrap."
+		return 1
+	fi
+
+	dlg_cur_gauge=25
 	dlg_cur_action="Creating basic Ubuntu installation (this will take a while)"
 	dialog_gauge
-	
 	debootstrap_target
-	
 	if [ ! $? -eq 0 ]; then
 		dialog_error "An error occured while trying to run debootstrap."
 		return 1
@@ -1257,7 +1387,7 @@ function item_create_7
 		return 1
 	fi
 
-	dlg_cur_gauge=45
+	dlg_cur_gauge=40
 	dlg_cur_action="Updating apt sources"
 	dialog_gauge
 	update_apt_sources
@@ -1266,7 +1396,7 @@ function item_create_7
 		return 1
 	fi
 
-	dlg_cur_gauge=50
+	dlg_cur_gauge=45
 	dlg_cur_action="Upgrading installation"
 	dialog_gauge
 	upgrade_system
@@ -1275,7 +1405,16 @@ function item_create_7
 		return 1
 	fi
 
-	dlg_cur_gauge=65
+	dlg_cur_gauge=50
+	dlg_cur_action="Downloading XBMC"
+	dialog_gauge
+	download_xbmc
+	if [ ! $? -eq 0 ]; then
+		dialog_error "An error occured while trying to download XBMC."
+		return 1
+	fi
+
+	dlg_cur_gauge=70
 	dlg_cur_action="Installing XBMC"
 	dialog_gauge
 	install_xbmc
