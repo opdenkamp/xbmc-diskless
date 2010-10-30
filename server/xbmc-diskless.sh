@@ -1095,7 +1095,7 @@ function menu_item_pack
 		dialog_error "An error occured while trying to compress the image. A detailed log can be found in '${log_file}'."
 		return 1
 	else
-		dialog_error "The compressed image has been created succesfully. You can continue to install the image."
+		dialog_message "The compressed image has been created succesfully. You can continue to install the image."
 		return 0
 	fi
 }
