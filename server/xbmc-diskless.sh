@@ -65,6 +65,7 @@ SED="/bin/sed"
 STATD="rpc.statd"
 SORT="/usr/bin/sort"
 TAIL="/usr/bin/tail"
+TOUCH="/usr/bin/touch"
 TFTPD="/usr/sbin/in.tftpd"
 UMOUNT="/bin/umount"
 WC="/usr/bin/wc"
@@ -285,28 +286,27 @@ function debootstrap_target_download
 	fi
 }
 
-## Run debootstrap on the target directory
-function debootstrap_target
+## Don't allow daemons to restart during the installation
+function dont_start_daemons
 {
-	# debootstrap destination
-	log_message "running debootstrap on '${target_dir}'"
-	try_exec $DEBOOTSTRAP --include=python-software-properties,language-pack-en,plymouth-label ${ubuntu_dist} ${target_dir} ${ubuntu_mirror}
-	if [ ! $? -eq 0 ]; then
-		return $EXEC_RETURN
-	fi
-
-	## don't allow daemons to restart during the installation
 	$CAT << EOF > ${target_dir}/usr/sbin/policy-rc.d
 #!/bin/sh
 exit 101
 EOF
 
 	try_exec $CHMOD +x ${target_dir}/usr/sbin/policy-rc.d
-	if [ ! $? -eq 0 ]; then
-		return $EXEC_RETURN
-	fi
 
-	return 0
+	return $EXEC_RETURN
+}
+
+## Run debootstrap on the target directory
+function debootstrap_target
+{
+	# debootstrap destination
+	log_message "running debootstrap on '${target_dir}'"
+	try_exec $DEBOOTSTRAP --include=python-software-properties,language-pack-en,plymouth-label ${ubuntu_dist} ${target_dir} ${ubuntu_mirror}
+	
+	return $EXEC_RETURN
 }
 
 ## Create the default fstab
@@ -556,7 +556,7 @@ function install_xbmc
 {
 	log_message "installing diskless xbmc"
 
-	touch ${target_dir}/tmp/.xbmc
+	$TOUCH ${target_dir}/tmp/.xbmc
 	try_exec $CHROOT ${target_dir} $APTGET ${APT_FLAGS} -y install xbmc-diskless-client
 
 	if [ ! $? -eq 0 ]; then
@@ -972,6 +972,55 @@ function dialog_error
 ##      Menu items
 ###############################################################################
 
+## upgrade an existing installation
+function menu_item_upgrade
+{
+	if [ ! -d ${target_dir} ]; then
+		dialog_error "The target directory does not exist at '${target_dir}'. Create a new installation first"
+	fi
+
+	dialog_default
+	dlg_title="Upgrade an existing installation"
+	dlg_cur_gauge=0
+	dlg_cur_action="Preparing target"
+	dialog_gauge
+	mount_virtual && \
+	dont_start_daemons && \
+	$TOUCH ${target_dir}/tmp/.xbmc
+	if [ ! $? -eq 0 ]; then
+		dialog_error "An error occured while trying to prepare the target. A detailed log can be found in '${log_file}'."
+		return 1
+	fi
+
+	dlg_cur_gauge=10
+	dlg_cur_action="Copying custom packages"
+	dialog_gauge
+	add_custom_packages
+
+	dlg_cur_gauge=25
+	dlg_cur_action="Updating apt sources"
+	dialog_gauge
+	update_apt_sources
+	if [ ! $? -eq 0 ]; then
+		dialog_error "An error occured while trying to update the apt sources. A detailed log can be found in '${log_file}'."
+		return 1
+	fi
+
+	dlg_cur_gauge=50
+	dlg_cur_action="Upgrading installation"
+	dialog_gauge
+	upgrade_system
+	if [ ! $? -eq 0 ]; then
+	dialog_error "An error occured while trying to upgrade the installation."
+		return 1
+	else
+		dlg_message="Image upgraded succesfully in '${target_dir}'. If you are satisfied with it, continue to 'pack' the image. This will create a compressed squashfs image of the installation."
+		dialog_message
+	fi
+
+	return 0
+}
+
 ## the help file
 function menu_item_help
 {
@@ -1008,6 +1057,7 @@ function show_dlg_menu
 			"pack" "Compress a new image" \
 			"install" "Install a new image" \
 			"provision" "Create the provisioning files" \
+			"upgrade" "Upgrade an existing installation" \
 			"help" "Show help" \
 			"exit" "Exit this tool" 2> $LAST_DIALOG
 
@@ -1059,6 +1109,10 @@ function dlg_menu_choice
 		update_provision
 		return $?
 	;;
+	upgrade)
+		menu_item_upgrade
+		return $?
+	;;
 	help)
 		menu_item_help
 		return $?
@@ -1095,7 +1149,8 @@ function menu_item_pack
 		dialog_error "An error occured while trying to compress the image. A detailed log can be found in '${log_file}'."
 		return 1
 	else
-		dialog_message "The compressed image has been created succesfully. You can continue to install the image."
+		dlg_message="The compressed image has been created succesfully. You can continue to install the image."
+		dialog_message
 		return 0
 	fi
 }
@@ -1388,7 +1443,7 @@ function item_create_7
 
 	dlg_cur_gauge=5
 	dlg_cur_action="Downloading basic Ubuntu installation (this will take a while)"
-	dialog_gauge
+	dialog_gauge && \
 	debootstrap_target_download
 	if [ ! $? -eq 0 ]; then
 		dialog_error "An error occured while trying to run debootstrap."
@@ -1399,6 +1454,7 @@ function item_create_7
 	dlg_cur_action="Creating basic Ubuntu installation (this will take a while)"
 	dialog_gauge
 	debootstrap_target
+	dont_start_daemons
 	if [ ! $? -eq 0 ]; then
 		dialog_error "An error occured while trying to run debootstrap."
 		return 1
