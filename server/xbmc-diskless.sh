@@ -631,7 +631,7 @@ function copy_host_key
 ## update the provisioning archives
 function update_provision
 {
-	$FIND -L ${base_dir}/provision/* -maxdepth 0 -type d -exec /usr/share/xbmc-diskless/provision.sh {} ${overlay_dir} \;
+	$FIND -L ${base_dir}/provision/* -maxdepth 0 -type d -exec /usr/share/xbmc-diskless/provision.sh {} "${overlay_dir}/provision" \;
 
 	return $?
 }
