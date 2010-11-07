@@ -403,47 +403,79 @@ function umount_virtual
 	return $?
 }
 
+## Add an apt source and make sure it's only added once
+function apt_source_add
+{
+	mirror="$1"
+	dist="$2"
+	repos="$3"
+
+	check=`$GREP "\${mirror}" ${target_dir}/etc/apt/sources.list | $GREP "\${dist}" | $GREP "\${repos}" | $WC -m`
+
+	if [ "$check" -eq 0 ]; then
+		log_message "adding '${mirror} ${dist} ${repos}'"
+		$CHROOT ${target_dir} $APTADDREPOS "deb ${mirror} ${dist} ${repos}"
+		if [ ! $? -eq 0 ]; then
+			log_error "failed to add apt source: deb ${ubuntu_mirror}"
+			return 1
+		fi
+		
+		$CHROOT ${target_dir} $APTADDREPOS "deb-src ${mirror} ${dist} ${repos}"
+		if [ ! $? -eq 0 ]; then
+			log_error "failed to add apt source: deb-src ${ubuntu_mirror}"
+			return 1
+		else
+			return 0
+		fi
+	else
+		log_message "'deb ${mirror} ${dist} ${repos}' already in /etc/apt/sources.list"
+	fi
+}
+
+## Add a ppa source and make sure it's only added once
+function ppa_source_add
+{
+	ppa="$1"
+
+	check=`$GREP "\${ppa}" ${target_dir}/etc/apt/sources.list.d/* | $WC -m`
+
+	if [ "$check" -eq 0 ]; then
+		log_message "adding '${ppa}'"
+		try_exec $CHROOT ${target_dir} $APTADDREPOS "$ppa"
+		if [ ! $? -eq 0 ]; then
+			log_error "failed to add apt source: '$ppa'"
+			return $EXEC_RETURN
+		else
+			return 0
+		fi
+	else
+		log_message "'$ppa' already in /etc/apt/sources.list.d"
+	fi
+}
+
 ## Create and update the apt sources
 function update_apt_sources
 {
 	# set the default apt sources
 	log_message "creating default apt sources"
 
-	log_message "adding 'deb ${ubuntu_mirror} ${ubuntu_dist} universe multiverse restricted'"
-	$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror} ${ubuntu_dist} universe multiverse restricted"
+	apt_source_add "$ubuntu_mirror" "$ubuntu_dist" "main universe multiverse restricted"
 	if [ ! $? -eq 0 ]; then
-		log_error "failed to add apt source: deb ${ubuntu_mirror}"
+		log_error "failed to add default apt source"
 		return 1
 	fi
-
-	# add the default mirror
-	log_message "adding 'deb-src ${ubuntu_mirror} ${ubuntu_dist} main universe multiverse restricted'"
-	$CHROOT ${target_dir} $APTADDREPOS "deb-src ${ubuntu_mirror} ${ubuntu_dist} main universe multiverse restricted"
-	if [ ! $? -eq 0 ]; then
-		log_error "failed to add apt source: deb-src ${ubuntu_mirror}"
-		return 1
-	fi
-
+	
 	# add the second mirror if it's set
 	if [ ! -z ${ubuntu_mirror2} ]; then
-		log_message "adding 'deb ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted'"
-		$CHROOT ${target_dir} $APTADDREPOS "deb ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted"
+		apt_source_add "$ubuntu_mirror2" "$ubuntu_dist" "main universe multiverse restricted"
 		if [ ! $? -eq 0 ]; then
-			log_error "failed to add apt source: 'deb ${ubuntu_mirror2}'"
-			return 1
-		fi
-
-		log_message "adding 'deb-src ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted'"
-		$CHROOT ${target_dir} $APTADDREPOS "deb-src ${ubuntu_mirror2} ${ubuntu_dist} main universe multiverse restricted"
-		if [ ! $? -eq 0 ]; then
-			log_error "failed to add apt source: 'deb-src ${ubuntu_mirror2}'"
+			log_error "failed to add second apt source"
 			return 1
 		fi
 	fi
 
 	# add the xbmc-diskless ppa
-	log_message "adding 'ppa:lars-opdenkamp/xbmc-diskless'"
-	try_exec $CHROOT ${target_dir} $APTADDREPOS "ppa:lars-opdenkamp/xbmc-diskless"
+	ppa_source_add "ppa:lars-opdenkamp/xbmc-diskless"
 	if [ ! $? -eq 0 ]; then
 		log_error "failed to add apt source: 'ppa:lars-opdenkamp/xbmc-diskless'"
 		return $EXEC_RETURN
@@ -459,10 +491,9 @@ function update_apt_sources
 
 	# add the custom ppa if it's set
 	if [ ! -z "${ppa_source}" ]; then
-		log_message "adding '${ppa_source}'"
-		try_exec $CHROOT ${target_dir} $APTADDREPOS "$ppa_source"
+		ppa_source_add "$ppa_source"
 		if [ ! $? -eq 0 ]; then
-			log_error "failed to add apt source: '${ppa_source}'"
+			log_error "failed to add apt source: '$ppa_source'"
 			return $EXEC_RETURN
 		fi
 	fi
@@ -485,7 +516,11 @@ function update_apt_sources
 function add_custom_packages
 {
 	log_message "adding packages from '${base_dir}/packages'"
-	$CHROOT ${target_dir} $APTADDREPOS "deb file:/ packages/"
+
+	check=`$GREP "deb file:/ packages/" ${target_dir}/etc/apt/sources.list | $WC -m`
+	if [ "$check" -eq 0 ]; then
+		$CHROOT ${target_dir} $APTADDREPOS "deb file:/ packages/"
+	fi
 
 	try_exec $CP -r ${base_dir}/packages ${target_dir}/.
 	try_exec $CHOWN -R root:root ${target_dir}/packages
