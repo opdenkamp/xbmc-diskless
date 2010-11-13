@@ -1,3 +1,23 @@
+xbmc-diskless (0.4.9.2) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    fix bug: don't add sources multiple times when upgrading
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sun, 07 Nov 2010 12:40:58 +0100
+
+xbmc-diskless (0.4.9.1) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    fix bug: provisioning files should go into /overlay/provision
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Mon, 01 Nov 2010 23:52:00 +0100
+
+xbmc-diskless (0.4.9) lucid; urgency=low
+
+  * server/xbmc-diskless.sh
+    - update an existing target from the menu
+ -- Lars Op den Kamp <lars@opdenkamp.eu>   Mon, 01 Nov 2010 11:59:00 +0100
+
 xbmc-diskless (0.4.8.1) lucid; urgency=low
 
   * server/xbmc-diskless.sh
