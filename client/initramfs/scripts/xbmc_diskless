@@ -224,6 +224,12 @@ join_overlay()
 	# make sure the owner of /home/xbmc is correct
 	chown 1000:1000 ${rootmnt}/home/xbmc
 
+	# symlink the xbmc.log in /var/log
+	if [ ! -f ${rootmnt}/var/log/xbmc.log ]; then
+		cd ${rootmnt}
+		ln -s home/xbmc/.xbmc/temp/xbmc.log var/log/xbmc.log
+	fi
+
 	[ "$quiet" != "y" ] && log_end_msg
 }
 
