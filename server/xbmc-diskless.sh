@@ -1324,7 +1324,7 @@ function item_create_3
 			item_create_4
 			return $?
 		;;
-		team-xbmc)
+		teamxbmc)
 			ppa_source="ppa:team-xbmc/ppa"
 			item_create_4
 			return $?
