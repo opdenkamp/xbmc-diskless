@@ -165,9 +165,7 @@ interfaces=${interface:-$interfaces}
 [ "$quiet" != "y" ] && echo "DHCP request for $i..."
 while [ -z "$configured" ]; do
     for i in $interfaces; do    # Make a DHCP request for each interface
-        # clientid is empty to prevent duplicate leases, but can also be passed
-        # as a kernel parameter if needed (e.g. for Windows DHCP servers)
-        if udhcpc -n -c "$clientid" -s /tmp/dhcp-script.sh -i $i $hostname_param $ip_param >/dev/null 2>&1; then
+        if udhcpc -n -C -s /tmp/dhcp-script.sh -i $i $hostname_param $ip_param >/dev/null 2>&1; then
             configured="true"
             break
         fi
@@ -220,7 +218,7 @@ apply_configuration()
 {
 [ -z "$ip" -o -z "$tftp" -o -z "$subnet" ] && exit
 
-ip address add $ip/$(subnet_to_cidr $subnet) dev $interface
+ip address add $ip/$(subnet_to_cidr $subnet) broadcast ${broadcast:-+} dev $interface
 
 for i in $router
 do
