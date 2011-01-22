@@ -1,3 +1,10 @@
+xbmc-diskless (0.4.9.4) lucid; urgency=low
+
+  * client/initramfs/scripts/init-premount/udhcp
+    sync with the udhcp script of ltsp
+
+ -- Lars Op den Kamp <lars@opdenkamp.eu>  Sat, 22 Jan 2010 12:37:00 +0100
+
 xbmc-diskless (0.4.9.3) lucid; urgency=low
 
   * server/xbmc-diskless.sh
